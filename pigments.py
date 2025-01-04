@@ -1,6 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
+from visualization import reflectance_to_rgb
 
 def compute_reflectance_from_absorption_and_scattering(absorption, scattering):
 
@@ -141,4 +142,55 @@ def generate_pigment_coefficients_physical(
     
     R = compute_reflectance_from_absorption_and_scattering(absorption, scattering)
     
-    return wavelengths, R, absorption, scattering
+    pigments_colors = []
+    for k in range(R.shape[0]):
+        rgb = reflectance_to_rgb(wavelengths, R[k])
+        pigments_colors.append(rgb)
+    
+    return wavelengths, R, absorption, scattering, pigments_colors
+
+
+def generate_mixtures(wavelengths, absorption, scattering, mixture_indexes, weights):
+    """
+    absorption: shape (num_pigments, num_wavelengths)
+    scattering: shape (num_pigments, num_wavelengths)
+    mixture_indexes: shape (num_mixtures, pigments_per_mixture)
+    weights: shape (num_mixtures, pigments_per_mixture)
+    """
+    
+    # Basic shape checks
+    if absorption.shape != scattering.shape:
+        raise ValueError("Absorption and scattering arrays must have the same shape!")
+    
+    if mixture_indexes.shape != weights.shape:
+        raise ValueError("mixture_indexes and weights must have the same shape!")
+    
+    num_mixtures, pigments_per_mixture = mixture_indexes.shape
+    
+    #Select the pigments using the mixture index array
+    selected_absorption = absorption[mixture_indexes.ravel()]
+    selected_absorption = selected_absorption.reshape(num_mixtures, pigments_per_mixture, -1)
+    
+    selected_scattering = scattering[mixture_indexes.ravel()]
+    selected_scattering = selected_scattering.reshape(num_mixtures, pigments_per_mixture, -1)
+    
+    # Multiply by weights
+    weighted_absorption = selected_absorption * weights[..., None]
+    weighted_scattering = selected_scattering * weights[..., None]
+    
+    # Sum across the pigment dimension (axis=1) to get shape (num_mixtures, num_wavelengths)
+    mixture_absorption = weighted_absorption.sum(axis=1)
+    mixture_scattering = weighted_scattering.sum(axis=1)
+        
+    # Compute reflectance
+    mixture_reflectance = compute_reflectance_from_absorption_and_scattering(
+        mixture_absorption, 
+        mixture_scattering
+    )
+    
+    mixture_colors = []
+    for k in range(mixture_reflectance.shape[0]):
+        rgb = reflectance_to_rgb(wavelengths, mixture_reflectance[k])
+        mixture_colors.append(rgb)
+    
+    return mixture_reflectance, mixture_absorption, mixture_scattering, mixture_colors

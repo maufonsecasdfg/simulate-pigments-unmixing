@@ -106,3 +106,75 @@ def plot_pigment_colors(wavelengths, R, K, S, pigments_colors):
     
     plt.tight_layout()
     plt.show()
+    
+def plot_mixture_colors(mixture_indexes, mixture_colors, pigments_colors, weights):
+    """
+    Plots a grid showing the constituent pigments (with their weights) and the
+    resulting mixture color for each mixture. 
+    
+    Args:
+        mixture_indexes (np.ndarray): Array of shape (num_mixtures, pigments_per_mixture)
+            containing the indices of the pigments that make up each mixture.
+        mixture_colors (list or np.ndarray): List (length num_mixtures) of RGB tuples
+            for the final mixture colors.
+        pigments_colors (list or np.ndarray): List (length num_pigments) of RGB tuples
+            for the individual pigment colors.
+        weights (np.ndarray): Array of shape (num_mixtures, pigments_per_mixture) containing
+            the weights of each pigment within each mixture.
+    """
+    num_mixtures = mixture_indexes.shape[0]
+    pigments_per_mixture = mixture_indexes.shape[1]
+    
+    # Create a grid with pigments + 1 column for the mixture
+    fig, axes = plt.subplots(
+        nrows=num_mixtures, 
+        ncols=pigments_per_mixture + 1, 
+        figsize=(3 * (pigments_per_mixture + 1), 3 * num_mixtures)
+    )
+    
+    # Ensure axes is always 2D
+    if num_mixtures == 1:
+        axes = np.array([axes])
+    
+    for mix_idx in range(num_mixtures):
+        for pig_idx in range(pigments_per_mixture):
+            ax = axes[mix_idx, pig_idx]
+            ax.axis('off')
+            
+            weight = weights[mix_idx, pig_idx]
+            p_idx = mixture_indexes[mix_idx, pig_idx]
+            
+            if weight == 0 or not (0 <= p_idx < len(pigments_colors)):
+                # Invalid index or zero weight -> White square
+                ax.imshow(np.ones((1, 1, 3)), extent=[0, 1, 0, 1])
+            else:
+                pigment_color = pigments_colors[p_idx]
+                ax.imshow([[pigment_color]], extent=[0, 1, 0, 1])
+                ax.text(
+                    0.5, 0.5,
+                    f"w={weight:.2f}",
+                    ha='center', va='center',
+                    color='white',
+                    bbox=dict(facecolor='black', alpha=0.5),
+                    fontsize=9
+                )
+                ax.set_title(f"Pigment {p_idx + 1}", fontsize=9)
+        
+        # Separator line
+        separator_ax = axes[mix_idx, pigments_per_mixture - 1]
+        separator_ax.axvline(
+            x=1.05,
+            color='black',
+            linewidth=1
+        )
+        
+        # Mixture color
+        ax_mix = axes[mix_idx, -1]
+        ax_mix.axis('off')
+        mixture_color = mixture_colors[mix_idx]
+        ax_mix.imshow([[mixture_color]], extent=[0, 1, 0, 1])
+        ax_mix.set_title(f"Mixture {mix_idx + 1}", fontsize=10)
+    
+    plt.subplots_adjust(hspace=1.5, wspace=0.6)
+    plt.tight_layout()
+    plt.show()

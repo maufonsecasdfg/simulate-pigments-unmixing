@@ -56,7 +56,7 @@ def reflectance_to_rgb(wavelengths, reflectance, illuminant='D65', observer='CIE
     
     return tuple(RGB)
 
-def plot_pigment_colors(wavelengths, R, K, S, pigments_colors):
+def plot_pigment_colors(wavelengths, R, K, S, pigment_colors):
     """
     Plot the reflectance, absorption, and scattering curves along with a color patch.
     
@@ -101,13 +101,16 @@ def plot_pigment_colors(wavelengths, R, K, S, pigments_colors):
         # Plot Color Patch
         ax = axes[k, 3]
         ax.axis('off')  # Hide axes
-        ax.imshow([[pigments_colors[k]]], extent=[0, 1, 0, 1])
+        ax.imshow([[pigment_colors[k]]], extent=[0, 1, 0, 1])
         ax.set_title(f'Pigment {k+1} - Perceived Color')
     
     plt.tight_layout()
     plt.show()
     
-def plot_mixture_colors(mixture_indexes, mixture_colors, pigments_colors, weights):
+import matplotlib.pyplot as plt
+import numpy as np
+
+def plot_mixture_colors(mixture_indexes, mixture_colors, pigment_colors, weights):
     """
     Plots a grid showing the constituent pigments (with their weights) and the
     resulting mixture color for each mixture. 
@@ -117,7 +120,7 @@ def plot_mixture_colors(mixture_indexes, mixture_colors, pigments_colors, weight
             containing the indices of the pigments that make up each mixture.
         mixture_colors (list or np.ndarray): List (length num_mixtures) of RGB tuples
             for the final mixture colors.
-        pigments_colors (list or np.ndarray): List (length num_pigments) of RGB tuples
+        pigment_colors (list or np.ndarray): List (length num_pigments) of RGB tuples
             for the individual pigment colors.
         weights (np.ndarray): Array of shape (num_mixtures, pigments_per_mixture) containing
             the weights of each pigment within each mixture.
@@ -125,11 +128,11 @@ def plot_mixture_colors(mixture_indexes, mixture_colors, pigments_colors, weight
     num_mixtures = mixture_indexes.shape[0]
     pigments_per_mixture = mixture_indexes.shape[1]
     
-    # Create a grid with pigments + 1 column for the mixture
+    # Create a grid with pigments + 2 columns (1 for "=" and 1 for the mixture)
     fig, axes = plt.subplots(
         nrows=num_mixtures, 
-        ncols=pigments_per_mixture + 1, 
-        figsize=(3 * (pigments_per_mixture + 1), 3 * num_mixtures)
+        ncols=pigments_per_mixture + 2, 
+        figsize=(3 * (pigments_per_mixture + 2), 3 * num_mixtures)
     )
     
     # Ensure axes is always 2D
@@ -144,11 +147,11 @@ def plot_mixture_colors(mixture_indexes, mixture_colors, pigments_colors, weight
             weight = weights[mix_idx, pig_idx]
             p_idx = mixture_indexes[mix_idx, pig_idx]
             
-            if weight == 0 or not (0 <= p_idx < len(pigments_colors)):
+            if weight == 0 or not (0 <= p_idx < len(pigment_colors)):
                 # Invalid index or zero weight -> White square
                 ax.imshow(np.ones((1, 1, 3)), extent=[0, 1, 0, 1])
             else:
-                pigment_color = pigments_colors[p_idx]
+                pigment_color = pigment_colors[p_idx]
                 ax.imshow([[pigment_color]], extent=[0, 1, 0, 1])
                 ax.text(
                     0.5, 0.5,
@@ -160,12 +163,15 @@ def plot_mixture_colors(mixture_indexes, mixture_colors, pigments_colors, weight
                 )
                 ax.set_title(f"Pigment {p_idx + 1}", fontsize=9)
         
-        # Separator line
-        separator_ax = axes[mix_idx, pigments_per_mixture - 1]
-        separator_ax.axvline(
-            x=1.05,
-            color='black',
-            linewidth=1
+        # "=" Sign Column
+        ax_equals = axes[mix_idx, pigments_per_mixture]
+        ax_equals.axis('off')
+        ax_equals.text(
+            0.5, 0.5,
+            "=",
+            ha='center', va='center',
+            fontsize=16,
+            fontweight='bold'
         )
         
         # Mixture color

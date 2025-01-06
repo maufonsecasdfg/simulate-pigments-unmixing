@@ -3,9 +3,31 @@ import matplotlib.pyplot as plt
 from scipy.ndimage import gaussian_filter1d
 from visualization import reflectance_to_rgb
 
-def compute_reflectance_from_absorption_and_scattering(absorption, scattering):
+def compute_reflectance_from_absorption_and_scattering(
+    absorption, 
+    scattering,
+    non_ideal_factor=0.0, 
+    seed=42):
+    """
+    Compute reflectance from absorption and scattering using 
+    the standard Kubelka–Munk formula, but allow for a controlled deviation.
+
+    Args:
+        absorption (np.ndarray): Array of absorption coefficients
+        scattering (np.ndarray): Array of scattering coefficients
+        non_ideal_factor (float): 0.0 = Offset added to (K/S). 
+                                        0.0 = ideal KM.
+                                        >0   => increases effective absorption ratio
+                                        <0   => decreases effective absorption ratio
+        seed (int): Random seed for reproducible perturbations.
+
+    Returns:
+        R (np.ndarray): Reflectance in [0, 1], same shape as absorption/scattering.
+    """
 
     F_R = absorption / (scattering + 1e-8)  # Avoid division by zero
+    
+    F_R += non_ideal_factor # Perturb the ratio to simulate deviations from KM theory
     
     # Solve the quadratic equation: R^2 - 2(1 + F_R)R + 1 = 0
     a_quad = 1.0
@@ -24,23 +46,24 @@ def compute_reflectance_from_absorption_and_scattering(absorption, scattering):
     
     return R
 
-def generate_pigment_coefficients_physical(
-    num_pigments=3,
-    wavelength_start=400,
-    wavelength_end=700,
-    max_peaks_per_pigment=3,
-    peak_strength_range=(2, 5),
-    peak_width_range=(10, 30),
-    correlation_strength=0.5,
-    K_min=0.1,
-    pre_peak_smoothing_sigma=7,
-    post_peak_smoothing_sigma=2,
-    K_baseline=2.0,
-    S_baseline=2.0,
-    K_variation=1.,
-    S_variation=3.,
-    seed=42
-):
+def generate_pigments(
+        num_pigments=3,
+        wavelength_start=400,
+        wavelength_end=700,
+        max_peaks_per_pigment=3,
+        peak_strength_range=(2, 5),
+        peak_width_range=(10, 30),
+        correlation_strength=0.5,
+        K_min=0.1,
+        pre_peak_smoothing_sigma=7,
+        post_peak_smoothing_sigma=2,
+        K_baseline=2.0,
+        S_baseline=2.0,
+        K_variation=1.,
+        S_variation=3.,
+        non_ideal_factor=0.0,
+        seed=42
+    ):
     """
     Generate physically consistent absorption (K), scattering (S), and reflectance (R)
     using Kubelka-Munk theory, maintaining a negative correlation between K and S.
@@ -61,6 +84,8 @@ def generate_pigment_coefficients_physical(
         S_baseline (float): Baseline value for scattering.
         K_variation (float): Variation range around K_baseline.
         S_variation (float): Variation range around S_baseline.
+        non_ideal_factor (float): Controls how far from ideal KM theory the reflectance can deviate.
+                                  0.0 = perfectly ideal KM, larger = more deviation.
         seed (int): Random seed for reproducibility.
 
     Returns:
@@ -140,22 +165,34 @@ def generate_pigment_coefficients_physical(
     scattering = np.maximum(scattering, 0.0)
     absorption = np.maximum(absorption, K_min)
     
-    R = compute_reflectance_from_absorption_and_scattering(absorption, scattering)
+    R = compute_reflectance_from_absorption_and_scattering(absorption, scattering, non_ideal_factor)
     
-    pigments_colors = []
+    pigment_colors = []
     for k in range(R.shape[0]):
         rgb = reflectance_to_rgb(wavelengths, R[k])
-        pigments_colors.append(rgb)
+        pigment_colors.append(rgb)
     
-    return wavelengths, R, absorption, scattering, pigments_colors
+    return wavelengths, R, absorption, scattering, pigment_colors
 
 
-def generate_mixtures(wavelengths, absorption, scattering, mixture_indexes, weights):
+def generate_mixtures(
+        wavelengths, 
+        absorption, 
+        scattering,
+        mixture_indexes, 
+        weights,
+        mixing_non_ideal_factor=0.0,
+        reflectance_non_ideal_factor=0.0,
+        seed= 42
+    ):
     """
     absorption: shape (num_pigments, num_wavelengths)
     scattering: shape (num_pigments, num_wavelengths)
     mixture_indexes: shape (num_mixtures, pigments_per_mixture)
     weights: shape (num_mixtures, pigments_per_mixture)
+    mixing_non_ideal_factor (float): Std of the noise added to weights. 0 = no noise
+    reflectance_non_ideal_factor (float): Perturbation strength for reflectance calculation
+    seed (int): Random seed for reproducibility
     """
     
     # Basic shape checks
@@ -167,6 +204,22 @@ def generate_mixtures(wavelengths, absorption, scattering, mixture_indexes, weig
     
     num_mixtures, pigments_per_mixture = mixture_indexes.shape
     
+    rng = np.random.default_rng(seed)
+    
+    if mixing_non_ideal_factor > 0.0:
+        # Add noise to weights
+        noise = rng.normal(loc=0.0, scale=mixing_non_ideal_factor, size=weights.shape)
+        noisy_weights = weights + noise
+
+        noisy_weights = np.clip(noisy_weights, 0, None)
+
+        row_sums = noisy_weights.sum(axis=1, keepdims=True) + 1e-12
+        noisy_weights /= row_sums
+
+        weights_used = noisy_weights
+    else:
+        weights_used = weights
+    
     #Select the pigments using the mixture index array
     selected_absorption = absorption[mixture_indexes.ravel()]
     selected_absorption = selected_absorption.reshape(num_mixtures, pigments_per_mixture, -1)
@@ -175,8 +228,8 @@ def generate_mixtures(wavelengths, absorption, scattering, mixture_indexes, weig
     selected_scattering = selected_scattering.reshape(num_mixtures, pigments_per_mixture, -1)
     
     # Multiply by weights
-    weighted_absorption = selected_absorption * weights[..., None]
-    weighted_scattering = selected_scattering * weights[..., None]
+    weighted_absorption = selected_absorption * weights_used[..., None]
+    weighted_scattering = selected_scattering * weights_used[..., None]
     
     # Sum across the pigment dimension (axis=1) to get shape (num_mixtures, num_wavelengths)
     mixture_absorption = weighted_absorption.sum(axis=1)
@@ -185,7 +238,8 @@ def generate_mixtures(wavelengths, absorption, scattering, mixture_indexes, weig
     # Compute reflectance
     mixture_reflectance = compute_reflectance_from_absorption_and_scattering(
         mixture_absorption, 
-        mixture_scattering
+        mixture_scattering,
+        reflectance_non_ideal_factor
     )
     
     mixture_colors = []
